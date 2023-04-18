@@ -1,0 +1,7 @@
+{
+"type": "FeatureCollection",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "Name": "Los Angeles International Airport", "City": "Los Angeles", "Country": "United States", "IATA": "LAX", "Latitude": 33.94250107, "Longitude": -118.4079971, "Altitude": 125 }, "geometry": { "type": "Point", "coordinates": [ -118.4079971, 33.94250107 ] } }
+]
+}
