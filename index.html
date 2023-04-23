@@ -38,8 +38,8 @@
     .pointAltitude(0)
     .pointRadius(0.02)
     .pointsMerge(true);
-    .controls().autoRotate = true; // Enable auto rotation
-    .controls().autoRotateSpeed = 0.5; // Set auto rotation speed
+    
+
 
 
   // load data
@@ -68,6 +68,9 @@
     myGlobe
       .pointsData(airports)
       .arcsData(filteredRoutes);
+      .controls().autoRotate = true; // Enable auto rotation
+      .controls().autoRotateSpeed = 0.5; // Set auto rotation speed
+
   });
 </script>
 </body>
