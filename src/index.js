@@ -1,183 +1,56 @@
-import "three";
-import "three-globe";
-import ThreeGlobe from "three-globe";
-import { WebGLRenderer, Scene } from "three";
-import {
-  PerspectiveCamera,
-  Line,
-  LineBasicMaterial,
-  BufferGeometry,
-  Vector3, Color,
-  AmbientLight,
-  DirectionalLight,
-  PointLight, SphereGeometry,
-  MeshBasicMaterial, Mesh, TextureLoader
-} from "three";
+import Globe from "globe.gl";
+import * as d3 from "d3-dsv";
+import indexBy from "index-array-by";
 
-import { TrackballControls } from "three/examples/jsm/controls/TrackballControls.js";
+const COUNTRY = 'Ghana';
+const OPACITY = 0.22;
 
-import { Lensflare, LensflareElement } from "three/examples/jsm/objects/Lensflare.js";
+const myGlobe = Globe()
+    (document.getElementById('globe'))
 
-// set up the scene
-const scene = new Scene();
-const renderer = new WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.getElementById('globe').appendChild(renderer.domElement);
+    .globeImageUrl("./img/nasa_night_lights.jpg")
+    .pointOfView({ lat: 8.0593, lng: -1.7296, altitude: 0.21 }) // aim at continental Ghana centroid
 
-const globe = new ThreeGlobe()
-    .globeImageUrl('./img/nasa_night_lights.jpg')
-    .bumpImageUrl('./img/earth-topology.png')
+    .arcLabel(d => `${d.airline}: ${d.srcIata} &#8594; ${d.dstIata}`)
+    .arcStartLat(d => +d.srcAirport.lat)
+    .arcStartLng(d => +d.srcAirport.lng)
+    .arcEndLat(d => +d.dstAirport.lat)
+    .arcEndLng(d => +d.dstAirport.lng)
+    .arcDashLength(0.25)
+    .arcDashGap(1)
+    .arcDashInitialGap(() => Math.random())
+    .arcDashAnimateTime(4000)
+    .arcColor(d => [`rgba(0, 255, 0, ${OPACITY})`, `rgba(255, 0, 0, ${OPACITY})`])
+    .arcsTransitionDuration(0)
 
-scene.add(globe);
+    .pointColor(() => 'orange')
+    .pointAltitude(0)
+    .pointRadius(0.02)
+    .pointsMerge(true);
 
+// load data
+const airportParse = ([airportId, name, city, country, iata, icao, lat, lng, alt, timezone, dst, tz, type, source]) => ({ airportId, name, city, country, iata, icao, lat, lng, alt, timezone, dst, tz, type, source });
+const routeParse = ([airline, airlineId, srcIata, srcAirportId, dstIata, dstAirportId, codeshare, stops, equipment]) => ({ airline, airlineId, srcIata, srcAirportId, dstIata, dstAirportId, codeshare, stops, equipment});
 
-const origin = "./data/la_int_airport.geojson";
-const destination = "./data/la_int_airport_flight.geojson";
+Promise.all([
+fetch('./data/airports.dat').then(res => res.text())
+    .then(d => d3.csvParseRows(d, airportParse)),
+fetch('./data/routes.dat').then(res => res.text())
+    .then(d => d3.csvParseRows(d, routeParse))
+]).then(([airports, routes]) => {
 
-fetch(origin)
-  .then(response => response.json())
-  .then(sourceData => {
-    fetch(destination)
-        .then(response => response.json())
-        .then(destinationData => {
-          const sourceCoordinates = sourceData.features[0].geometry.coordinates;
-          destinationData.features.forEach(destinationFeature => {
-            if (destinationFeature && destinationFeature.geometry && destinationFeature.geometry.coordinates) {
-              const destinationCoordinates = destinationFeature.geometry.coordinates;
-              const flightPath = new Line(
-                new BufferGeometry().setFromPoints([
-                  new Vector3().fromArray(sourceCoordinates),
-                  new Vector3().fromArray(destinationCoordinates)
-                ]),
-  
-                new LineBasicMaterial({ color:0xff0000 })
-              );
-              globe.add(flightPath);
-              // create a lensflare for the glowing light effect
-              const lensFlare = new Lensflare();
-              lensFlare.addElement(new LensflareElement(
-                new TextureLoader().load("./firefly/PointIconImages/3.png"),
-                100, 0, new Color(0xff6600)));
-              
-              // create a glowing light as a point light
-              const light = new PointLight(0xff6600, 1, 10);
-              light.add(lensFlare);
-              light.position.fromArray(destinationCoordinates);
-              globe.add(light);
-            }
-          });
-          // create camera
-          const camera = new PerspectiveCamera(
-            75, //Field of view
-            window.innerWidth / window.innerHeight, // Aspect ratio
-            0.1, // Near clipping plane
-            1000 // Far clipping plane
-            );
-          // set initial camera position 
-          camera.position.set(0, 0, 200);
-          
-          // set camera controls
-          const controls = new TrackballControls(camera, renderer.domElement);
+    const byIata = indexBy(airports, 'iata', false);
 
-          // create sphere geometry for ripple effect
-          const rippleGeometry = new SphereGeometry(2, 32, 32);
+    const filteredRoutes = routes
+        .filter(d => byIata.hasOwnProperty(d.srcIata) && byIata.hasOwnProperty(d.dstIata)) // exclude unknown airports
+        .filter(d => d.stops === '0') // non-stop flights only
+        .map(d => Object.assign(d, {
+        srcAirport: byIata[d.srcIata],
+        dstAirport: byIata[d.dstIata]
+        }))
+        .filter(d => d.srcAirport.country === COUNTRY && d.dstAirport.country !== COUNTRY); // international routes from country
 
-          // create material for ripple effect
-          const rippleMaterial = new MeshBasicMaterial({ color: 0xff0000 });
-
-          // create mesh for ripple effect
-          const rippleMesh = new Mesh(rippleGeometry, rippleMaterial);
-
-          // set initial scale for ripple mesh
-          rippleMesh.scale.set(0, 0, 0);
-
-          // set position of ripple mesh to source coordinates
-          rippleMesh.position.fromArray(sourceCoordinates);
-
-          // add ripple mesh to globe
-          globe.add(rippleMesh);
-
-          // set animation function to handle updates and render loop
-          const animate = () => {
-            requestAnimationFrame(animate);
-
-            // rotate globe
-            globe.rotation.y += 0.001;
-
-            // update scale of ripple mesh to create pulsating effect
-            rippleMesh.scale.set(
-              Math.abs(Math.sin(Date.now() * 0.001)) * 2,
-              Math.abs(Math.sin(Date.now() * 0.001)) * 2,
-              Math.abs(Math.sin(Date.now() * 0.001)) * 2
-            );
-            // update controls
-            controls.update();
-            renderer.render(scene, camera);
-          };
-
-          // call animation function to begin render loop
-
-          animate()
-        })
-        .catch(error => {
-          console.error("Failed to fetch destination data:", error);
-        });
-  })
-  .catch(error => {
-    console.error("Failed to fetch origin data:", error);
-  });
-
-
-  // const tbControls = new THREE.TrackballControls(camera, renderer.domElement);
-  // tbControls.minDistance = 101;
-  // tbControls.rotateSpeed = 5;
-  // tbControls.zoomSpeed = 0.8;
-
-  // // Kick-off renderer
-  // (function animate() { // IIFE
-  //   // Frame cycle
-  //   tbControls.update();
-  //   renderer.render(scene, camera);
-  //   requestAnimationFrame(animate);
-  // })();
-
-// fetch("./airports/la_int_airport.geojson")
-//   .then(response => response.json())
-//   .then(sourData => {
-//     // create the globe
-//     const globe = new ThreeGlobe()
-//       .globeImageUrl('./img/nasa_night_lights.jpg')
-//       .bumpImageUrl('./img/earth-topology.png')
-    
-//     const sourceCoordinates = sourData.features[0].geometry.coordinates;
-
-
-//     // create a bubble at the source airport
-//     const bubbleSource = ThreeGlobe.bubble()
-//         .radius(0.3)
-//         .position(sourceCoordinates)
-//         .color('blue')
-//         .label('Source')
-//         .labelSize("0.15")
-//         .labelDotRadius(0.05)
-//         .labelDotStrokeWidth(0.01)
-//         .labelDotStrokeColor('black')
-//     globe.add(bubbleSource);
-
-//     fetch("./airports/la_int_airport_flight.geojson")
-//         .then(response => response.json())
-//         .then(destinationData => {
-//           destinationData.features.forEach(feature => {
-//             const destinationCoordinates = feature.geometry.coordinates;
-//             const path = ThreeGlobe.path()
-//                 .points([sourceCoordinates, destinationCoordinates])
-//                 .color('red')
-//                 .strokeWidth(0.01);
-//             globe.add(path)
-//           });
-//         })
-//         .catch(error => console.error(error));
-//       scene.add(globe);
-//   })
-//   .catch(error => console.error(error));
-
+    myGlobe
+        .pointsData(airports)
+        .arcsData(filteredRoutes);
+});
